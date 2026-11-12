@@ -1,0 +1,45 @@
+name: Build addon APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descomprimir proyecto
+        run: unzip -q MrCrayfishFurnitureMod-MCPE-Couches.zip
+
+      - name: Descargar NDK r10e
+        run: |
+          curl -L -o ndk.zip https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip
+          unzip -q ndk.zip -d $HOME
+          echo "NDK=$HOME/android-ndk-r10e" >> $GITHUB_ENV
+
+      - name: Compilar libreria nativa
+        working-directory: MrCrayfishFurnitureMod-MCPE
+        run: |
+          $NDK/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk
+          ls -la libs/armeabi-v7a
+
+      - name: Empaquetar y firmar APK
+        working-directory: MrCrayfishFurnitureMod-MCPE
+        run: |
+          BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          AJ=$(ls -d $ANDROID_HOME/platforms/android-* | sort -V | tail -1)/android.jar
+          $BT/aapt package -f -M AndroidManifest.xml -S res -A assets -I $AJ -F unsigned.apk
+          mkdir -p lib/armeabi-v7a
+          cp libs/armeabi-v7a/*.so lib/armeabi-v7a/
+          $BT/aapt add unsigned.apk lib/armeabi-v7a/libcom.mrcrayfish.furniturepe.so lib/armeabi-v7a/libgnustl_shared.so
+          $BT/zipalign -f 4 unsigned.apk aligned.apk
+          keytool -genkeypair -keystore debug.keystore -storepass android -keypass android -alias key -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Furniture"
+          $BT/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out MrCrayfishFurniture_Couches.apk aligned.apk
+          $BT/apksigner verify MrCrayfishFurniture_Couches.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MrCrayfishFurniture_Couches-apk
+          path: MrCrayfishFurnitureMod-MCPE/MrCrayfishFurniture_Couches.apk
