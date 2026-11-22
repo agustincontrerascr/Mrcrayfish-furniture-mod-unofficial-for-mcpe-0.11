@@ -17,19 +17,40 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Locate project folder
+        run: |
+          MK=$(find . -type f -name make_apk.py -path '*/tools/*' | head -1)
+          if [ -z "$MK" ]; then
+            MK=$(find . -type f -name Android.mk -path '*/jni/*' -not -path '*/android-ndk*' | head -1)
+            DIR=$(dirname "$(dirname "$MK")")
+          else
+            DIR=$(dirname "$(dirname "$MK")")
+          fi
+          if [ -z "$MK" ] || [ ! -f "$DIR/jni/Android.mk" ]; then
+            echo "No se encontro jni/Android.mk. Contenido del repositorio:"
+            find . -maxdepth 4 -not -path './.git/*' | head -80
+            exit 1
+          fi
+          echo "Proyecto en: $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
       - name: Download NDK r10e
         run: |
           wget -q https://dl.google.com/android/repository/android-ndk-r10e-linux-x86_64.zip
-          unzip -q android-ndk-r10e-linux-x86_64.zip
+          unzip -q android-ndk-r10e-linux-x86_64.zip -d "$RUNNER_TEMP"
 
       - name: Build native library
-        run: ./android-ndk-r10e/ndk-build NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk
+        run: |
+          cd "$PROJECT_DIR"
+          "$RUNNER_TEMP/android-ndk-r10e/ndk-build" NDK_PROJECT_PATH=. APP_BUILD_SCRIPT=jni/Android.mk NDK_APPLICATION_MK=jni/Application.mk
 
       - name: Package and sign APK
-        run: python3 tools/make_apk.py
+        run: |
+          cd "$PROJECT_DIR"
+          python3 tools/make_apk.py
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: CFM_Native_Ultimate_0.14.1_apk
-          path: CFM_Native_Ultimate_0.14.1.apk
+          path: ${{ env.PROJECT_DIR }}/CFM_Native_Ultimate_0.14.1.apk
